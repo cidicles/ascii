@@ -3,24 +3,14 @@ const fs = require("fs");
 const path = require("path");
 
 const PORT = 1337;
-const FRAME_RATE = 33; // ms per frame (~30fps)
+const FRAME_RATE = 33; // ms per frame
+// const FRAME_PATH = "/www/ascii/ascii_frames";
 const FRAME_PATH = "/www/ascii/ascii_frames";
 
-// Load all ASCII frames into memory
-const loadFrames = () => {
-    const frames = [];
-    const files = fs.readdirSync(FRAME_PATH).sort();
-    files.forEach((file) => {
-        if (file.endsWith(".txt")) {
-            // Normalize line endings to \r\n for proper Telnet rendering
-            const frame = fs.readFileSync(path.join(FRAME_PATH, file), "utf8").replace(/\n/g, "\r\n");
-            frames.push(frame);
-        }
-    });
-    return frames;
-};
-
-const frames = loadFrames();
+// Just get the list of frame filenames, sorted
+const frameFiles = fs.readdirSync(FRAME_PATH)
+    .filter((file) => file.endsWith(".txt"))
+    .sort();
 
 const server = net.createServer((socket) => {
     console.log("New client connected!");
@@ -29,13 +19,22 @@ const server = net.createServer((socket) => {
     const interval = setInterval(() => {
         if (!socket.writable) return clearInterval(interval);
 
-        // Clear screen and reset cursor
-        socket.write("\x1b[2J\x1b[H");
+        const frameFile = frameFiles[frameIndex];
+        const framePath = path.join(FRAME_PATH, frameFile);
 
-        // Send frame
-        socket.write(frames[frameIndex] || "No frames loaded.\r\n");
+        // Read the current frame from disk
+        fs.readFile(framePath, "utf8", (err, data) => {
+            if (err) {
+                console.error("Failed to read frame:", frameFile, err);
+                return;
+            }
 
-        frameIndex = (frameIndex + 1) % frames.length;
+            const formattedFrame = data.replace(/\n/g, "\r\n");
+            socket.write("\x1b[2J\x1b[H"); // Clear + cursor home
+            socket.write(formattedFrame);
+        });
+
+        frameIndex = (frameIndex + 1) % frameFiles.length;
     }, FRAME_RATE);
 
     socket.on("end", () => {
